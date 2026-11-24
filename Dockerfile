@@ -1,13 +1,29 @@
-# syntax=docker/dockerfile:1
+FROM nginxinc/nginx-unprivileged:1.27-alpine
 
-# Stage 1: compile WebDOOM to WebAssembly with Emscripten using the repo's own build.sh.
-FROM emscripten/emsdk:3.1.38 AS build
-WORKDIR /src
-COPY . .
-RUN chmod +x build.sh && ./build.sh doom1 \
- && cp build/web/doom1.html build/web/index.html
+USER root
 
-# Stage 2: serve the static output (HTML, JS, WASM, data files) over HTTP.
-FROM nginx:1.27-alpine
-COPY --from=build /src/build/web /usr/share/nginx/html
-EXPOSE 80
+# The repository ships a prebuilt browser bundle (index.html, index.js, doom*.js,
+# doom*.wasm, doom*.data) under public/. Serve it as static files.
+RUN apk --no-cache upgrade
+
+RUN cat <<'EOF' > /etc/nginx/conf.d/default.conf
+server {
+    listen 8080;
+    listen [::]:8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+EOF
+
+COPY --chown=101:101 public/ /usr/share/nginx/html/
+
+USER 101
+
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]
